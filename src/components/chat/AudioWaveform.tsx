@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
+import { useTheme } from "next-themes";
 
 interface AudioWaveformProps {
   analyser: AnalyserNode | null;
@@ -9,9 +10,26 @@ interface AudioWaveformProps {
   size?: number;
 }
 
-// Calm teal for recording, lavender for playback
-const RECORDING_COLOR = { r: 95, g: 158, b: 160 }; // #5F9EA0
-const PLAYBACK_COLOR = { r: 150, g: 123, b: 182 }; // #967BB6
+// Parse a CSS color string (hex or rgb) into { r, g, b }
+function parseColor(cssValue: string): { r: number; g: number; b: number } {
+  const trimmed = cssValue.trim();
+  // Handle hex format
+  if (trimmed.startsWith("#")) {
+    const hex = trimmed.slice(1);
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    };
+  }
+  // Handle rgb() or space-separated format
+  const match = trimmed.match(/(\d+)\s*[,\s]\s*(\d+)\s*[,\s]\s*(\d+)/);
+  if (match) {
+    return { r: Number(match[1]), g: Number(match[2]), b: Number(match[3]) };
+  }
+  // Fallback defaults
+  return { r: 95, g: 158, b: 160 };
+}
 
 export function AudioWaveform({
   analyser,
@@ -21,9 +39,9 @@ export function AudioWaveform({
 }: AudioWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>(0);
+  const { resolvedTheme } = useTheme();
 
   const isActive = isRecording || isPlaying;
-  const color = isRecording ? RECORDING_COLOR : PLAYBACK_COLOR;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -31,6 +49,16 @@ export function AudioWaveform({
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+
+    // Read theme-aware colors from CSS custom properties
+    const computedStyle = getComputedStyle(document.documentElement);
+    const recordingColor = parseColor(
+      computedStyle.getPropertyValue("--color-calm") || "#5F9EA0"
+    );
+    const playbackColor = parseColor(
+      computedStyle.getPropertyValue("--color-lavender") || "#967BB6"
+    );
+    const color = isRecording ? recordingColor : playbackColor;
 
     // Retina scaling
     const dpr = window.devicePixelRatio || 1;
@@ -137,7 +165,7 @@ export function AudioWaveform({
     return () => {
       cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [analyser, isRecording, isPlaying, isActive, size, color]);
+  }, [analyser, isRecording, isPlaying, isActive, size, resolvedTheme]);
 
   return (
     <div className="flex items-center justify-center">

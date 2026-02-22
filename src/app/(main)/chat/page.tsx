@@ -14,7 +14,13 @@ import { ScrollAnchor } from "@/components/chat/ScrollAnchor";
 import { ConversationList } from "@/components/chat/ConversationList";
 import { useScrollAnchor } from "@/hooks/use-scroll-anchor";
 import { CRISIS_KEYWORDS } from "@/lib/config";
-import { Heart, PanelLeftOpen, PanelLeftClose, Keyboard } from "lucide-react";
+import {
+  Heart,
+  PanelLeftOpen,
+  PanelLeftClose,
+  Keyboard,
+  Loader2,
+} from "lucide-react";
 import type { Conversation } from "@/types";
 import type { VoiceMode } from "@/types/voice";
 
@@ -33,6 +39,8 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("text");
   const [autoPlayTTS, setAutoPlayTTS] = useState(true);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [loadingMessages, setLoadingMessages] = useState(false);
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -54,6 +62,11 @@ export default function ChatPage() {
     onFinish() {
       autoScroll();
       if (!isDemo) loadConversations();
+    },
+    onError(err) {
+      setChatError(
+        err.message || "Something went wrong. Please try again."
+      );
     },
   });
 
@@ -96,6 +109,38 @@ export default function ChatPage() {
       }
     }
   }, [messages]);
+
+  // Auto-title conversations based on first user message
+  useEffect(() => {
+    if (!activeConversationId) return;
+    const activeConvo = conversations.find(
+      (c) => c.id === activeConversationId
+    );
+    if (!activeConvo || activeConvo.title !== "New Conversation") return;
+
+    const firstUserMsg = messages.find((m) => m.role === "user");
+    if (!firstUserMsg) return;
+
+    const text = getMessageText(firstUserMsg).trim();
+    if (!text) return;
+
+    const newTitle = text.length > 30 ? text.slice(0, 30) + "..." : text;
+
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeConversationId ? { ...c, title: newTitle } : c
+      )
+    );
+
+    // In production mode, also update Supabase
+    if (!isDemo && supabase) {
+      supabase
+        .from("conversations")
+        .update({ title: newTitle })
+        .eq("id", activeConversationId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, activeConversationId]);
 
   // Auto-scroll when new messages arrive
   useEffect(() => {
@@ -148,22 +193,27 @@ export default function ChatPage() {
         return;
       }
 
-      const { data } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", activeConversationId)
-        .order("created_at", { ascending: true });
+      setLoadingMessages(true);
+      try {
+        const { data } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", activeConversationId)
+          .order("created_at", { ascending: true });
 
-      if (data) {
-        setMessages(
-          data.map((m) => ({
-            id: m.id,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            createdAt: new Date(m.created_at),
-            parts: [{ type: "text" as const, text: m.content }],
-          }))
-        );
+        if (data) {
+          setMessages(
+            data.map((m) => ({
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              createdAt: new Date(m.created_at),
+              parts: [{ type: "text" as const, text: m.content }],
+            }))
+          );
+        }
+      } finally {
+        setLoadingMessages(false);
       }
     }
     loadMessages();
@@ -174,6 +224,7 @@ export default function ChatPage() {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
 
+    setChatError(null);
     sendMessage({ text: trimmed });
     setInput("");
   }
@@ -185,6 +236,7 @@ export default function ChatPage() {
   // Voice transcription handler — sends the transcribed text as a chat message
   function handleVoiceTranscription(text: string) {
     if (!text.trim() || isLoading) return;
+    setChatError(null);
     sendMessage({ text: text.trim() });
   }
 
@@ -206,6 +258,7 @@ export default function ChatPage() {
       setActiveConversationId(newConvo.id);
       setMessages([]);
       setShowSafety(false);
+      setChatError(null);
       setInput("");
       return;
     }
@@ -231,13 +284,48 @@ export default function ChatPage() {
       setActiveConversationId(data.id);
       setMessages([]);
       setShowSafety(false);
+      setChatError(null);
       setInput("");
+    }
+  }
+
+  async function handleDeleteConversation(id: string) {
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+
+    if (id === activeConversationId) {
+      const remaining = conversations.filter((c) => c.id !== id);
+      setActiveConversationId(
+        remaining.length > 0 ? remaining[0].id : null
+      );
+      setMessages([]);
+    }
+
+    if (!isDemo && supabase) {
+      await supabase.from("messages").delete().eq("conversation_id", id);
+      await supabase.from("conversations").delete().eq("id", id);
+    }
+  }
+
+  async function handleRenameConversation(id: string, newTitle: string) {
+    const trimmed = newTitle.trim();
+    if (!trimmed) return;
+
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, title: trimmed } : c))
+    );
+
+    if (!isDemo && supabase) {
+      await supabase
+        .from("conversations")
+        .update({ title: trimmed })
+        .eq("id", id);
     }
   }
 
   function selectConversation(id: string) {
     setActiveConversationId(id);
     setShowSafety(false);
+    setChatError(null);
     setSidebarOpen(false);
     setInput("");
   }
@@ -250,7 +338,12 @@ export default function ChatPage() {
         {/* Sidebar Toggle (Mobile) */}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="fixed bottom-24 left-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-surface-200 bg-white shadow-lg md:hidden dark:border-surface-700 dark:bg-surface-800"
+          aria-label={
+            sidebarOpen
+              ? "Close conversation sidebar"
+              : "Open conversation sidebar"
+          }
+          className="fixed bottom-24 left-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-surface-200 bg-white shadow-lg transition-colors md:hidden dark:border-surface-700 dark:bg-surface-800"
         >
           {sidebarOpen ? (
             <PanelLeftClose className="h-4 w-4 text-surface-600 dark:text-surface-300" />
@@ -259,17 +352,28 @@ export default function ChatPage() {
           )}
         </button>
 
+        {/* Sidebar Backdrop (Mobile) */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-[9] bg-black/30 backdrop-blur-sm md:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
         {/* Sidebar */}
         <aside
           className={`${
-            sidebarOpen ? "block" : "hidden"
-          } absolute inset-y-16 left-0 z-10 w-72 border-r border-surface-200 bg-surface-50 md:relative md:inset-y-0 md:block dark:border-surface-700 dark:bg-surface-900`}
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          } fixed inset-y-16 left-0 z-10 w-72 border-r border-surface-200 bg-surface-50 transition-transform duration-200 ease-in-out md:relative md:inset-y-0 md:translate-x-0 dark:border-surface-700 dark:bg-surface-900`}
         >
           <ConversationList
             conversations={conversations}
             activeId={activeConversationId}
             onSelect={selectConversation}
             onNew={handleNewConversation}
+            onDelete={handleDeleteConversation}
+            onRename={handleRenameConversation}
           />
         </aside>
 
@@ -279,7 +383,11 @@ export default function ChatPage() {
             <>
               {/* Messages */}
               <div ref={scrollRef} className="flex-1 overflow-y-auto py-6">
-                {messages.length === 0 && (
+                {loadingMessages ? (
+                  <div className="flex h-full items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-calm" />
+                  </div>
+                ) : messages.length === 0 ? (
                   <div className="flex h-full flex-col items-center justify-center px-4 text-center">
                     <Heart className="mb-4 h-12 w-12 text-calm-300 dark:text-calm-700" />
                     <h2 className="mb-2 font-serif text-xl font-semibold text-surface-700 dark:text-surface-300">
@@ -290,17 +398,39 @@ export default function ChatPage() {
                       and everything you say stays between us.
                     </p>
                   </div>
+                ) : (
+                  messages.map((message) => (
+                    <ChatMessage key={message.id} message={message} />
+                  ))
                 )}
-
-                {messages.map((message) => (
-                  <ChatMessage key={message.id} message={message} />
-                ))}
 
                 {isLoading &&
                   messages[messages.length - 1]?.role === "user" && (
                     <TypingIndicator />
                   )}
               </div>
+
+              {/* Chat Error Banner */}
+              {chatError && (
+                <div className="mx-4 mb-2 flex items-center justify-between rounded-xl border border-warmth-200 bg-warmth-50 px-4 py-3 text-sm text-warmth-dark dark:border-warmth-dark/30 dark:bg-warmth-dark/10 dark:text-warmth-300">
+                  <span>{chatError}</span>
+                  <button
+                    onClick={() => {
+                      setChatError(null);
+                      const lastUserMsg = [...messages]
+                        .reverse()
+                        .find((m) => m.role === "user");
+                      if (lastUserMsg) {
+                        const text = getMessageText(lastUserMsg);
+                        if (text) sendMessage({ text });
+                      }
+                    }}
+                    className="ml-3 flex-shrink-0 rounded-lg bg-warmth-100 px-3 py-1 font-medium text-warmth-dark transition-colors hover:bg-warmth-200 dark:bg-warmth-dark/20 dark:hover:bg-warmth-dark/30"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
 
               <ScrollAnchor
                 visible={showScrollButton}

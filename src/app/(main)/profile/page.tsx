@@ -15,7 +15,7 @@ export default function ProfilePage() {
   const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   const [displayName, setDisplayName] = useState("");
   const [companionName, setCompanionName] = useState("");
@@ -65,7 +65,7 @@ export default function ProfilePage() {
 
     const supabase = createClient();
     if (!supabase) {
-      setMessage("Profile saving is not available in demo mode.");
+      setMessage({ text: "Profile saving is not available in demo mode.", type: "error" });
       setSaving(false);
       return;
     }
@@ -85,9 +85,9 @@ export default function ProfilePage() {
       .eq("id", user.id);
 
     if (error) {
-      setMessage("Failed to save. Please try again.");
+      setMessage({ text: "Failed to save. Please try again.", type: "error" });
     } else {
-      setMessage("Profile updated successfully!");
+      setMessage({ text: "Profile updated successfully!", type: "success" });
     }
 
     setSaving(false);
@@ -187,12 +187,12 @@ export default function ProfilePage() {
             {message && (
               <div
                 className={`rounded-lg px-4 py-3 text-sm ${
-                  message.includes("success")
+                  message.type === "success"
                     ? "bg-calm-50 text-calm-700 dark:bg-calm-900/30 dark:text-calm-300"
                     : "bg-warmth-50 text-warmth-dark dark:bg-warmth-dark/10 dark:text-warmth-300"
                 }`}
               >
-                {message}
+                {message.text}
               </div>
             )}
 
