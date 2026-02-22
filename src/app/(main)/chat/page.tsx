@@ -41,6 +41,7 @@ export default function ChatPage() {
   const [autoPlayTTS, setAutoPlayTTS] = useState(true);
   const [chatError, setChatError] = useState<string | null>(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -365,7 +366,11 @@ export default function ChatPage() {
         <aside
           className={`${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          } fixed inset-y-16 left-0 z-10 w-72 border-r border-surface-200 bg-surface-50 transition-transform duration-200 ease-in-out md:relative md:inset-y-0 md:translate-x-0 dark:border-surface-700 dark:bg-surface-900`}
+          } ${
+            desktopSidebarCollapsed
+              ? "md:w-0 md:translate-x-0 md:overflow-hidden md:border-r-0"
+              : "md:relative md:inset-y-0 md:w-72 md:translate-x-0"
+          } fixed inset-y-16 left-0 z-10 w-72 border-r border-surface-200 bg-surface-50 transition-all duration-200 ease-in-out dark:border-surface-700 dark:bg-surface-900`}
         >
           <ConversationList
             conversations={conversations}
@@ -379,6 +384,21 @@ export default function ChatPage() {
 
         {/* Main Chat Area */}
         <div className="relative flex flex-1 flex-col">
+          {/* Desktop sidebar collapse toggle */}
+          <button
+            onClick={() => setDesktopSidebarCollapsed((prev) => !prev)}
+            className="absolute left-4 top-4 z-10 hidden h-8 w-8 items-center justify-center rounded-lg border border-surface-200 bg-white text-surface-500 transition-colors hover:bg-surface-100 hover:text-surface-700 md:flex dark:border-surface-700 dark:bg-surface-800 dark:text-surface-400 dark:hover:bg-surface-700 dark:hover:text-surface-200"
+            aria-label={
+              desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+            }
+          >
+            {desktopSidebarCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" />
+            )}
+          </button>
+
           {activeConversationId ? (
             <>
               {/* Messages */}

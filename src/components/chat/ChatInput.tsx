@@ -2,7 +2,10 @@
 
 import { useRef, useEffect } from "react";
 import { Send, Mic, Keyboard } from "lucide-react";
+import { clsx } from "clsx";
 import type { VoiceMode } from "@/types/voice";
+
+const MAX_LENGTH = 2000;
 
 interface ChatInputProps {
   input: string;
@@ -70,6 +73,7 @@ export function ChatInput({
           onKeyDown={handleKeyDown}
           placeholder="Share what's on your mind..."
           disabled={isLoading}
+          maxLength={MAX_LENGTH}
           rows={1}
           className="flex-1 resize-none rounded-2xl border border-surface-200 bg-surface-50 px-4 py-3 text-sm text-surface-800 placeholder:text-surface-400 focus:border-calm focus:outline-none focus:ring-2 focus:ring-calm/20 disabled:opacity-50 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-100 dark:placeholder:text-surface-500"
         />
@@ -81,6 +85,21 @@ export function ChatInput({
           <Send className="h-4 w-4" />
         </button>
       </form>
+
+      {/* Character counter — only visible when typing */}
+      {input.length > 0 && (
+        <div className="mx-auto mt-1 max-w-3xl text-right text-xs tabular-nums">
+          <span
+            className={clsx(
+              input.length > MAX_LENGTH * 0.9
+                ? "text-warmth-dark dark:text-warmth-300"
+                : "text-surface-400 dark:text-surface-500"
+            )}
+          >
+            {input.length.toLocaleString()}/{MAX_LENGTH.toLocaleString()}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

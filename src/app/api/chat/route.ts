@@ -2,7 +2,7 @@ import { streamText, createUIMessageStreamResponse, createUIMessageStream } from
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getModel } from "@/lib/ai/models";
-import { COMPANION_SYSTEM_PROMPT } from "@/lib/ai/prompts";
+import { buildCompanionPrompt } from "@/lib/ai/prompts";
 import { rateLimit, getClientIP } from "@/lib/rate-limit";
 import { isDemoMode } from "@/lib/demo";
 
@@ -91,7 +91,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 3. Parse and validate request
+    // 3. Fetch user profile for AI personalization
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("display_name, companion_name, mood_pref")
+      .eq("id", user.id)
+      .single();
+
+    // 4. Parse and validate request
     const { messages, conversationId } = await request.json();
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -152,7 +159,15 @@ export async function POST(request: NextRequest) {
     // 6. Stream AI response
     const result = streamText({
       model: getModel(),
-      system: COMPANION_SYSTEM_PROMPT,
+      system: buildCompanionPrompt(
+        profile
+          ? {
+              displayName: profile.display_name,
+              companionName: profile.companion_name,
+              moodPref: profile.mood_pref,
+            }
+          : null
+      ),
       messages: trimmedMessages,
       temperature: 0.85,
       maxOutputTokens: 1024,

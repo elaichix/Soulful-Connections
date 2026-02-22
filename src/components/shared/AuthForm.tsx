@@ -20,6 +20,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [forgotSent, setForgotSent] = useState(false);
 
   const isLogin = mode === "login";
 
@@ -65,6 +66,29 @@ export function AuthForm({ mode }: AuthFormProps) {
         "Check your email for a confirmation link to complete your signup."
       );
       setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    if (!email) {
+      setError("Please enter your email address first.");
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    const supabase = createClient();
+    if (!supabase) {
+      setError("Password reset is not available in demo mode.");
+      return;
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/api/auth/callback`,
+    });
+    if (error) {
+      setError(error.message);
+    } else {
+      setForgotSent(true);
+      setMessage("Password reset link sent! Check your email.");
     }
   }
 
@@ -223,6 +247,20 @@ export function AuthForm({ mode }: AuthFormProps) {
               </button>
             </div>
           </div>
+
+          {/* Forgot password link (login mode only, hidden in demo) */}
+          {isLogin && !isDemo && (
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                disabled={forgotSent}
+                className="text-xs font-medium text-calm-dark hover:text-calm-600 dark:text-calm-light dark:hover:text-calm-300 disabled:opacity-50"
+              >
+                {forgotSent ? "Reset link sent" : "Forgot password?"}
+              </button>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-lg bg-warmth-50 px-4 py-3 text-sm text-warmth-dark dark:bg-warmth-dark/10 dark:text-warmth-300">
